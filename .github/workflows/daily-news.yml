@@ -1,0 +1,30 @@
+name: Global News Daily Reporter
+
+on:
+  schedule:
+    # UTC 04:00 对应北京时间中午 12:00
+    - cron: '0 4 * * *'
+  workflow_dispatch: # 支持手动点击运行测试
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-value: '18'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run News Reporter Script
+        env:
+          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+        run: node index.js

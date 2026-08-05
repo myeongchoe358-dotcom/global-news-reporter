@@ -36,11 +36,11 @@ async function formatDeepVideoEmail(articles) {
   const today = new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' });
   
   // 实例化 Pipeline，自动读取你设置的 LLM_API_KEY
-  const pipeline = new Pipeline({
-    apiKey: process.env.LLM_API_KEY,
-    apiBase: process.env.LLM_API_BASE || '[https://api.deepseek.com/v1](https://api.deepseek.com/v1)',
-    model: process.env.LLM_MODEL || 'deepseek-chat'
-  });
+ const pipeline = new Pipeline({
+  apiKey: process.env.LLM_API_KEYZHIPUAI || process.env.LLM_API_KEY,
+  apiBase: 'https://open.bigmodel.cn/api/paas/v4', // 智谱 API 专用地址（已去除多余的中括号）
+  model: 'glm-4-flash'                            // 智谱免费大模型
+});
 
   let htmlContent = `
     <div style="font-family: Microsoft YaHei, Arial, sans-serif; max-width: 900px; margin: 0 auto; color: #222; line-height: 1.8;">

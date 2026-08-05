@@ -1,20 +1,25 @@
+const https = require('https');
+const { URL } = require('url');
+
 /**
  * 全球新闻自动报导流水线 (Pipeline Orchestrator)
  */
 class Pipeline {
   constructor(config = {}) {
     this.config = config;
-    this.apiKey = config.apiKey || process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
+    // 智谱 API Key
+    this.apiKey = config.apiKey || process.env.ZHIPU_API_KEY || process.env.LLM_API_KEY;
     
-    // 1. 清洗 apiBase
-    let rawBase = (config.apiBase || process.env.LLM_API_BASE || 'https://api.deepseek.com/v1').trim();
+    // 智谱 OpenAI 兼容端点与默认模型
+    let rawBase = (config.apiBase || process.env.LLM_API_BASE || 'https://open.bigmodel.cn/api/paas/v4').trim();
     const urlMatch = rawBase.match(/https?:\/\/[^\s\]\)]+/);
     if (urlMatch) {
       rawBase = urlMatch[0];
     }
 
     this.apiBase = rawBase.replace(/\/+$/, '');
-    this.model = config.model || process.env.LLM_MODEL || 'deepseek-chat';
+    // 智谱推荐通用模型，如 glm-4 或 glm-4-flash
+    this.model = config.model || process.env.LLM_MODEL || 'glm-4';
   }
 
   /**
@@ -51,7 +56,7 @@ class Pipeline {
 据 ${sourceName} 报道，[此处写满 220 字以上。必须原汁原味引述新闻核心原句，详细列出新闻中的首要数据与事实，揭示事件发生的直接背景，并提出核心悬念，绝对不能只写三两句话！]
 🎥 **画面描述**：[匹配的细分场景描述]
 🎬 **即梦/剪映 Prompt**：[中文自然语言 Prompt]
-⚙️ **ComfyUI Prompt**：[英文 Tag 组]
+⚙️ **ComfyUI Prompt**：[英文 Prompt]
 
 【分镜2 | 深度背景与数据全景】（预计时长：80秒 | 旁白要求：至少350字）
 🎙️ **旁白口播**：[此处写满 350 字以上！必须把新闻原文中的所有细节数据、具体名称、统计结果一字不漏地展开，并逐一解释这些数据对行业、市场或全球经济的深远影响。]
@@ -83,18 +88,62 @@ class Pipeline {
     return `${this.apiBase}/chat/completions`;
   }
 
+  /**
+   * 使用原生 https 模块做 HTTP POST 请求（兼容全版本 Node.js，带 120 秒超时机制）
+   */
+  httpPost(urlString, headers, bodyData, timeoutMs = 120000) {
+    return new Promise((resolve, reject) => {
+      const parsedUrl = new URL(urlString);
+      const postData = JSON.stringify(bodyData);
+
+      const options = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || 443,
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let responseBody = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { responseBody += chunk; });
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(responseBody);
+            resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, data });
+          } catch (e) {
+            reject(new Error(`响应数据解析失败: ${responseBody}`));
+          }
+        });
+      });
+
+      req.setTimeout(timeoutMs, () => {
+        req.destroy();
+        reject(new Error(`请求超时（限制 ${timeoutMs / 1000} 秒）`));
+      });
+
+      req.on('error', (err) => reject(err));
+      req.write(postData);
+      req.end();
+    });
+  }
+
   async generateScript(newsArticle) {
     const prompt = this.buildStoryboardPrompt(newsArticle);
     const requestUrl = this.getRequestUrl();
 
     try {
-      const response = await fetch(requestUrl, {
-        method: 'POST',
-        headers: {
+      const response = await this.httpPost(
+        requestUrl,
+        {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify({
+        {
           model: this.model,
           messages: [
             { 
@@ -105,24 +154,22 @@ class Pipeline {
           ],
           temperature: 0.5,
           max_tokens: 4000
-        })
-      });
-
-      const data = await response.json();
+        }
+      );
 
       if (!response.ok) {
-        const errorDetails = data.error?.message || data.message || JSON.stringify(data);
+        const errorDetails = response.data.error?.message || response.data.message || JSON.stringify(response.data);
         throw new Error(`[API Error ${response.status}]: ${errorDetails}`);
       }
 
-      const rawScript = data.choices?.[0]?.message?.content || '';
+      const rawScript = response.data.choices?.[0]?.message?.content || '';
       if (!rawScript) {
         throw new Error('API 返回的数据中未获取到有效文本内容');
       }
 
       return this.formatOutput(rawScript);
     } catch (error) {
-      console.error('大模型 API 调用失败:', error.message);
+      console.error('智谱 API 调用失败:', error.message);
       throw error;
     }
   }

@@ -133,4 +133,5 @@ class Pipeline {
   }
 }
 
-module.g.exports = Pipeline;
+// 最后一行的标准 CommonJS 模块导出：
+module.exports = Pipeline;

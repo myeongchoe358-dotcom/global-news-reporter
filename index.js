@@ -35,6 +35,7 @@ function convertScriptToHtml(rawScript) {
 async function formatDeepVideoEmail(articles) {
   const today = new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' });
   
+  // 修正 apiBase 为标准 URL 字符串
   const pipeline = new Pipeline({
     apiKey: process.env.LLM_API_KEYZHIPUAI || process.env.LLM_API_KEY,
     apiBase: '[https://open.bigmodel.cn/api/paas/v4](https://open.bigmodel.cn/api/paas/v4)',

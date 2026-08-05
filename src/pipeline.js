@@ -1,4 +1,23 @@
 /**
+ * 全球新闻自动报导流水线 (Pipeline Orchestrator)
+ */
+class Pipeline {
+  constructor(config = {}) {
+    this.config = config;
+    this.apiKey = config.apiKey || process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
+    
+    // 1. 清洗 apiBase
+    let rawBase = (config.apiBase || process.env.LLM_API_BASE || 'https://api.deepseek.com/v1').trim();
+    const urlMatch = rawBase.match(/https?:\/\/[^\s\]\)]+/);
+    if (urlMatch) {
+      rawBase = urlMatch[0];
+    }
+
+    this.apiBase = rawBase.replace(/\/+$/, '');
+    this.model = config.model || process.env.LLM_MODEL || 'deepseek-chat';
+  }
+
+  /**
    * 构建结构化区块强约束 Prompt（通用版：防止非航运类新闻误混入硬编码数据）
    */
   buildStoryboardPrompt(newsArticle) {
@@ -59,3 +78,59 @@
 新闻内容: ${newsArticle.content || newsArticle.description || newsArticle.body || ''}
 `;
   }
+
+  getRequestUrl() {
+    return `${this.apiBase}/chat/completions`;
+  }
+
+  async generateScript(newsArticle) {
+    const prompt = this.buildStoryboardPrompt(newsArticle);
+    const requestUrl = this.getRequestUrl();
+
+    try {
+      const response = await fetch(requestUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            { 
+              role: 'system', 
+              content: '你是一名严肃的国际新闻解说主编。你的原则是：拒绝任何形式的苍白概括，必须提供信息密度极高、字数饱满、逻辑闭环的口播台词。对于字数不够的要求，你必须通过增加新闻细节复述和逻辑推演来补齐。' 
+            },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.5,
+          max_tokens: 4000
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const errorDetails = data.error?.message || data.message || JSON.stringify(data);
+        throw new Error(`[API Error ${response.status}]: ${errorDetails}`);
+      }
+
+      const rawScript = data.choices?.[0]?.message?.content || '';
+      if (!rawScript) {
+        throw new Error('API 返回的数据中未获取到有效文本内容');
+      }
+
+      return this.formatOutput(rawScript);
+    } catch (error) {
+      console.error('大模型 API 调用失败:', error.message);
+      throw error;
+    }
+  }
+
+  formatOutput(rawScript) {
+    if (!rawScript) return '';
+    return rawScript.trim();
+  }
+}
+
+module.exports = Pipeline;

@@ -1,14 +1,15 @@
 /**
  * 全球新闻自动报导流水线 (Pipeline Orchestrator)
  */
-
 class Pipeline {
   constructor(config = {}) {
     this.config = config;
-    // 配置免费 API Base 和 API Key
-    // 支持 DeepSeek 免费/低成本接口或 SiliconFlow (硅基流动) 的免费模型
     this.apiKey = config.apiKey || process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
-    this.apiBase = config.apiBase || process.env.LLM_API_BASE || 'https://api.deepseek.com/v1'; 
+    
+    // 1. 清洗 apiBase，防止末尾斜杠、多余空格或非规范字符
+    let rawBase = (config.apiBase || process.env.LLM_API_BASE || 'https://api.deepseek.com/v1').trim();
+    this.apiBase = rawBase.replace(/\/+$/, ''); // 去除结尾所有斜杠
+    
     this.model = config.model || process.env.LLM_MODEL || 'deepseek-chat';
   }
 
@@ -41,13 +42,23 @@ class Pipeline {
   }
 
   /**
-   * 调用免费 API 生成脚本
+   * 安全拼接 URL 路径
+   */
+  getRequestUrl() {
+    // 确保无论 apiBase 结尾是否包含 /v4 或 /v1，都能安全构建标准 Endpoint
+    const endpoint = '/chat/completions';
+    return `${this.apiBase}${endpoint}`;
+  }
+
+  /**
+   * 调用大模型 API 生成脚本
    */
   async generateScript(newsArticle) {
     const prompt = this.buildStoryboardPrompt(newsArticle);
+    const requestUrl = this.getRequestUrl();
 
     try {
-      const response = await fetch(`${this.apiBase}/chat/completions`, {
+      const response = await fetch(requestUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -64,10 +75,21 @@ class Pipeline {
       });
 
       const data = await response.json();
+
+      // 2. 增加对 API 异常响应（非 200）的明确捕获
+      if (!response.ok) {
+        const errorDetails = data.error?.message || data.message || JSON.stringify(data);
+        throw new Error(`[API Error ${response.status}]: ${errorDetails}`);
+      }
+
       const rawScript = data.choices?.[0]?.message?.content || '';
+      if (!rawScript) {
+        throw new Error('API 返回的数据中未获取到有效文本内容');
+      }
+
       return this.formatOutput(rawScript);
     } catch (error) {
-      console.error('免费大模型 API 调用失败:', error);
+      console.error('大模型 API 调用失败:', error.message);
       throw error;
     }
   }

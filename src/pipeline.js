@@ -6,10 +6,10 @@ class Pipeline {
     this.config = config;
     this.apiKey = config.apiKey || process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
     
-    // 1. 获取原始 apiBase
+    // 1. 获取原始 apiBase 字符串
     let rawBase = (config.apiBase || process.env.LLM_API_BASE || 'https://api.deepseek.com/v1').trim();
     
-    // 2. 彻底清洗 Markdown 链接残留（如 [https://...](https://...)），提取真正的 http(s) URL
+    // 2. 核心修复：彻底剔除 Markdown 链接残留（如 [https://...](https://...)），提取纯净的 http(s) URL
     const urlMatch = rawBase.match(/https?:\/\/[^\s\]\)]+/);
     if (urlMatch) {
       rawBase = urlMatch[0];
@@ -20,6 +20,9 @@ class Pipeline {
     this.model = config.model || process.env.LLM_MODEL || 'deepseek-chat';
   }
 
+  /**
+   * 生成无断句、全闭环、含多工具画面提示词的分镜 Prompt
+   */
   buildStoryboardPrompt(newsArticle) {
     return `
 你是一名专业的短视频新闻主编与 AI 视频导演。请根据以下新闻原文，撰写包含【完整闭环旁白】与【适配即梦/剪映/ComfyUI的视频Prompt】的 5 分钟短视频脚本。
@@ -45,10 +48,16 @@ class Pipeline {
 `;
   }
 
+  /**
+   * 安全拼接 URL 路径
+   */
   getRequestUrl() {
     return `${this.apiBase}/chat/completions`;
   }
 
+  /**
+   * 调用大模型 API 生成脚本
+   */
   async generateScript(newsArticle) {
     const prompt = this.buildStoryboardPrompt(newsArticle);
     const requestUrl = this.getRequestUrl();
@@ -89,6 +98,9 @@ class Pipeline {
     }
   }
 
+  /**
+   * 格式化输出，确保无字数截断
+   */
   formatOutput(rawScript) {
     if (!rawScript) return '';
     return rawScript.trim();
